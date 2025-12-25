@@ -245,6 +245,18 @@
     <div class="modal-content">
       <h2 id="modalDate"></h2>
       <input type="text" id="eventTitle" placeholder="タイトル">
+      <div style="margin: 6px 0;">
+        <label style="font-size:12px;">コピー基準曜日:</label>
+        <select id="eventWeekday" style="padding:4px;">
+          <option value="0">日曜日</option>
+          <option value="1">月曜日</option>
+          <option value="2">火曜日</option>
+          <option value="3">水曜日</option>
+          <option value="4">木曜日</option>
+          <option value="5">金曜日</option>
+          <option value="6">土曜日</option>
+        </select>
+      </div>
       <div class="time-inputs">
         <input type="number" id="eventStartHour" min="0" max="23" placeholder="時">
         <span>:</span>
@@ -272,6 +284,33 @@
       let events = loadEvents();
       let selectedDate = null;
       let editingIndex = null;
+
+      // 第n X曜日を計算するヘルパー
+      function getNthWeekday(date) {
+        const day = date.getDay(); // 0:Sun, 1:Mon...
+        const d = date.getDate();
+        const n = Math.floor((d - 1) / 7) + 1;
+        return { n, day };
+      }
+
+      // 指定年月の第n X曜日の日付を取得するヘルパー
+      function getDateByNthWeekday(year, month, n, day) {
+        const firstDayOfMonth = new Date(year, month, 1);
+        const firstDayOfWeek = firstDayOfMonth.getDay();
+
+        let offset = day - firstDayOfWeek;
+        if (offset < 0) offset += 7;
+
+        const firstOccurrence = 1 + offset;
+        const targetDateNum = firstOccurrence + (n - 1) * 7;
+
+        const targetDate = new Date(year, month, targetDateNum);
+
+        // 月が変わってしまった場合は存在しない (例: 第5金曜日がない場合など)
+        if (targetDate.getMonth() !== month) return null;
+
+        return targetDate;
+      }
 
       function loadEvents() {
         try { return JSON.parse(localStorage.getItem('pwaCal.events')) || {}; }
@@ -318,6 +357,11 @@
             const data = events[selectedDate][editingIndex];
             document.getElementById('modalDate').textContent = selectedDate;
             document.getElementById('eventTitle').value = data.title;
+
+            // 曜日セレクタの初期値設定（選択された日の曜日）
+            const d = new Date(selectedDate);
+            // 保存された曜日があればそれを使う、なければ日付から計算
+            document.getElementById('eventWeekday').value = (data.weekday !== undefined) ? data.weekday : d.getDay();
 
             // 時間のパース (HH:MM-HH:MM or HH:MM)
             const timeStr = data.time || '';
@@ -384,6 +428,10 @@
             editingIndex = null;
             document.getElementById('modalDate').textContent = selectedDate;
             document.getElementById('eventTitle').value = '';
+
+            // 曜日セレクタの初期値設定
+            const d = new Date(selectedDate);
+            document.getElementById('eventWeekday').value = d.getDay();
             document.getElementById('eventStartHour').value = '';
             document.getElementById('eventStartMinute').value = '';
             document.getElementById('eventEndHour').value = '';
@@ -411,6 +459,7 @@
         const nextMonth = nextDate.getMonth();
 
         let copyCount = 0;
+        let skipCount = 0;
 
         // 既存のイベントを走査
         Object.keys(events).forEach(dateKey => {
@@ -421,23 +470,48 @@
 
           // 表示中の月のイベントのみ対象
           if (y === currentYear && m === currentMonth) {
-            // 翌月の同日が存在するか確認 (例: 1/31 -> 2/31は不正なのでスキップされる)
-            const targetDateTest = new Date(nextYear, nextMonth, d);
-            if (targetDateTest.getMonth() === nextMonth) {
-              const targetKey = targetDateTest.toISOString().split('T')[0];
+            const currentDate = new Date(y, m, d);
+            const { n, day } = getNthWeekday(currentDate);
 
-              if (!events[targetKey]) events[targetKey] = [];
+            // 翌月の同じ 第n X曜日 を計算
+            // evt.weekday があればそれを優先、なければ dateKey の曜日を使用
+            let targetDay = day;
+            // 複数のイベントがある場合、それぞれの設定を見る必要があるが、
+            // 現在の構造では events[dateKey] は配列。
+            // 個別のイベントごとにコピー先が変わる可能性があるため、ループ内で処理する。
 
-              events[dateKey].forEach(evt => {
-                events[targetKey].push({ ...evt }); // コピーを作成
+            // NOTE: events[dateKey] loop starts in lines below.
+            // But targetDate is calculated OUTSIDE the loop in original code.
+            // We must move targetDate calculation INSIDE the loop.
+
+            // Original code structure was assuming all events on that day go to same target.
+            // Now, events[dateKey][0] might want Tuesday, events[dateKey][1] might want Wednesday.
+
+            // So we iterate events FIRST.
+            events[dateKey].forEach(evt => {
+              const preferredDay = (evt.weekday !== undefined) ? evt.weekday : day;
+
+              const targetDate = getDateByNthWeekday(nextYear, nextMonth, n, preferredDay);
+
+              if (targetDate) {
+                // toISOString()はUTCになるため、ローカル日付から直接生成する
+                const ty = targetDate.getFullYear();
+                const tm = String(targetDate.getMonth() + 1).padStart(2, '0');
+                const td = String(targetDate.getDate()).padStart(2, '0');
+                const targetKey = `${ty}-${tm}-${td}`;
+
+                if (!events[targetKey]) events[targetKey] = [];
+                events[targetKey].push({ ...evt });
                 copyCount++;
-              });
-            }
+              } else {
+                skipCount++;
+              }
+            });
           }
         });
 
         saveEvents();
-        alert(`${copyCount}件の予定を翌月にコピーしました。`);
+        alert(`${copyCount}件の予定を翌月にコピーしました。${skipCount > 0 ? `\n(${skipCount}件は翌月に該当する曜日が存在しないためスキップされました)` : ''}`);
         renderCalendar();
       };
 
@@ -446,6 +520,7 @@
       // モーダル操作
       document.getElementById('saveEvent').onclick = () => {
         const title = document.getElementById('eventTitle').value.trim();
+        const weekday = parseInt(document.getElementById('eventWeekday').value);
         // 時間の結合
         const sh = document.getElementById('eventStartHour').value;
         const sm = document.getElementById('eventStartMinute').value;
@@ -468,9 +543,9 @@
         if (!title) return alert('タイトルを入力してください');
         if (!events[selectedDate]) events[selectedDate] = [];
         if (editingIndex != null) {
-          events[selectedDate][editingIndex] = { title, time };
+          events[selectedDate][editingIndex] = { title, time, weekday };
         } else {
-          events[selectedDate].push({ title, time });
+          events[selectedDate].push({ title, time, weekday });
         }
         saveEvents();
         document.getElementById('modal').style.display = 'none';
@@ -489,12 +564,29 @@
         if (editingIndex == null) return;
         const src = events[selectedDate][editingIndex];
         const base = new Date(selectedDate);
-        const next = new Date(base.getFullYear(), base.getMonth() + 1, base.getDate());
-        const key = next.toISOString().split('T')[0];
-        if (!events[key]) events[key] = [];
-        events[key].push({ ...src });
-        saveEvents();
-        alert(`次の月（${key}）にコピーしました`);
+
+        // 第n X曜日基準でコピー
+        // nは元の日付から計算し、曜日はセレクタの値を使用する
+        const { n } = getNthWeekday(base);
+        const selectedDay = parseInt(document.getElementById('eventWeekday').value);
+
+        // 翌月
+        const nextMonthDate = new Date(base.getFullYear(), base.getMonth() + 1, 1);
+        const targetDate = getDateByNthWeekday(nextMonthDate.getFullYear(), nextMonthDate.getMonth(), n, selectedDay);
+
+        if (targetDate) {
+          const ty = targetDate.getFullYear();
+          const tm = String(targetDate.getMonth() + 1).padStart(2, '0');
+          const td = String(targetDate.getDate()).padStart(2, '0');
+          const key = `${ty}-${tm}-${td}`;
+
+          if (!events[key]) events[key] = [];
+          events[key].push({ ...src });
+          saveEvents();
+          alert(`来月の第${n}${['日', '月', '火', '水', '木', '金', '土'][selectedDay]}曜日（${key}）にコピーしました`);
+        } else {
+          alert(`来月には第${n}${['日', '月', '火', '水', '木', '金', '土'][selectedDay]}曜日が存在しません`);
+        }
       };
       document.getElementById('cancelModal').onclick = () => { document.getElementById('modal').style.display = 'none'; };
 
