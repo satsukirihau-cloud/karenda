@@ -236,6 +236,7 @@
     <button id="todayBtn">今日</button>
     <button id="nextBtn">次の月 →</button>
     <button id="copyMonthBtn" style="background:#8b5cf6;">今月の予定を来月にコピー</button>
+    <button id="deleteMonthBtn" style="background:#ef4444;">今月の予定を全て削除</button>
     <button id="printBtn">🖨 印刷</button>
   </div>
   <table class="calendar" id="calendar"></table>
@@ -513,6 +514,29 @@
         saveEvents();
         alert(`${copyCount}件の予定を翌月にコピーしました。${skipCount > 0 ? `\n(${skipCount}件は翌月に該当する曜日が存在しないためスキップされました)` : ''}`);
         renderCalendar();
+      };
+
+      document.getElementById('deleteMonthBtn').onclick = () => {
+        if (!confirm(`${viewDate.getFullYear()}年${viewDate.getMonth() + 1}月の予定を全て削除してもよろしいですか？\nこの操作は取り消せません。`)) return;
+
+        const currentYear = viewDate.getFullYear();
+        const currentMonth = viewDate.getMonth();
+        let deleteCount = 0;
+
+        Object.keys(events).forEach(dateKey => {
+          const dateParts = dateKey.split('-');
+          const y = parseInt(dateParts[0]);
+          const m = parseInt(dateParts[1]) - 1;
+
+          if (y === currentYear && m === currentMonth) {
+            delete events[dateKey];
+            deleteCount++;
+          }
+        });
+
+        saveEvents();
+        renderCalendar();
+        alert(`${deleteCount}日分の予定を削除しました。`);
       };
 
       document.getElementById('printBtn').onclick = () => window.print();
