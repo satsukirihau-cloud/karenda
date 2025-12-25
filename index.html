@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="ja">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>カレンダー（オフラインPWA版）</title>
+
+  <!-- ✅ iOSホーム画面対応 -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="カレンダー">
+  <link rel="apple-touch-icon" href="icon-192.png">
+
+  <!-- ✅ PWA設定 -->
+  <link rel="manifest" href="manifest.json">
+
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --fg: #0f172a;
+      --accent: #2563eb;
+      --border: #cbd5e1;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: "Meiryo", "Segoe UI", sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    input {
+      user-select: auto;
+      -webkit-user-select: auto;
+    }
+
+    h1 {
+      margin: 16px 0;
+      font-size: 28px;
+      text-align: center;
+    }
+
+    .controls {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      padding: 8px 14px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      opacity: 0.9;
+    }
+
+    .calendar {
+      width: 95%;
+      max-width: 900px;
+      border-collapse: collapse;
+      margin-bottom: 30px;
+      table-layout: fixed;
+    }
+
+    .calendar th {
+      background: #e2e8f0;
+      padding: 8px;
+      font-weight: 600;
+    }
+
+    .calendar td {
+      border: 1px solid var(--border);
+      width: 14.2%;
+      vertical-align: top;
+      height: 110px;
+      padding: 6px;
+      position: relative;
+    }
+
+    .calendar td:hover {
+      background: #f1f5f9;
+    }
+
+    .date-num {
+      font-weight: bold;
+      font-size: 14px;
+      margin-bottom: 4px;
+    }
+
+    .event {
+      background: #3b82f6;
+      color: white;
+      border-radius: 4px;
+      padding: 4px 6px;
+      font-size: 13px;
+      margin: 2px 0;
+      word-wrap: break-word;
+      cursor: grab;
+    }
+
+    .event:active {
+      cursor: grabbing;
+      opacity: 0.7;
+    }
+
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      justify-content: center;
+      align-items: center;
+      z-index: 10;
+    }
+
+    .modal-content {
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      width: 90%;
+      max-width: 400px;
+    }
+
+    .modal-content h2 {
+      margin-top: 0;
+    }
+
+    input {
+      width: 100%;
+      padding: 8px;
+      margin: 6px 0;
+      font-size: 14px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+
+    .time-inputs {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin: 6px 0;
+    }
+
+    .time-inputs input {
+      width: 60px;
+      text-align: center;
+    }
+
+    @media print {
+      @page {
+        size: A4 portrait;
+        margin: 10mm;
+      }
+
+      body {
+        background: white;
+        color: black;
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: 0;
+      }
+
+      .controls,
+      .modal {
+        display: none !important;
+      }
+
+      h1 {
+        font-size: 24px;
+        margin: 0 0 10px 0;
+        text-align: left;
+      }
+
+      .calendar {
+        width: 100%;
+        /* ページの残りの高さを計算 (タイトル分を除く) */
+        height: calc(100vh - 50px);
+        table-layout: fixed;
+      }
+
+      .calendar th {
+        background: white;
+        border: 1px solid black;
+        padding: 4px;
+        height: 30px;
+      }
+
+      .calendar td {
+        border: 1px solid black;
+        /* 行の高さを均等に広げる */
+        height: auto;
+        vertical-align: top;
+        padding: 4px;
+      }
+
+      /* 行の高さを強制的に均等化するためにtrに高さを指定 */
+      .calendar tr {
+        height: 1fr;
+      }
+
+      .event {
+        font-size: 11px;
+        background: white;
+        color: black;
+        border: 1px solid black;
+        box-shadow: none;
+        margin: 1px 0;
+        padding: 2px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <h1 id="monthTitle"></h1>
+  <div class="controls">
+    <button id="prevBtn">← 前の月</button>
+    <button id="todayBtn">今日</button>
+    <button id="nextBtn">次の月 →</button>
+    <button id="copyMonthBtn" style="background:#8b5cf6;">今月の予定を来月にコピー</button>
+    <button id="printBtn">🖨 印刷</button>
+  </div>
+  <table class="calendar" id="calendar"></table>
+
+  <!-- モーダル -->
+  <div class="modal" id="modal">
+    <div class="modal-content">
+      <h2 id="modalDate"></h2>
+      <input type="text" id="eventTitle" placeholder="タイトル">
+      <div class="time-inputs">
+        <input type="number" id="eventStartHour" min="0" max="23" placeholder="時">
+        <span>:</span>
+        <input type="number" id="eventStartMinute" min="0" max="59" placeholder="分">
+        <span>-</span>
+        <input type="number" id="eventEndHour" min="0" max="23" placeholder="時">
+        <span>:</span>
+        <input type="number" id="eventEndMinute" min="0" max="59" placeholder="分">
+      </div>
+      <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;">
+        <button id="saveEvent">保存</button>
+        <button id="deleteEvent" style="background:#ef4444;">削除</button>
+        <button id="copyNext" style="background:#16a34a;">次の月にコピー</button>
+        <button id="cancelModal" style="background:#64748b;">閉じる</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // --- カレンダー機能 ---
+    (() => {
+      const calEl = document.getElementById('calendar');
+      const titleEl = document.getElementById('monthTitle');
+      let viewDate = new Date();
+      let events = loadEvents();
+      let selectedDate = null;
+      let editingIndex = null;
+
+      function loadEvents() {
+        try { return JSON.parse(localStorage.getItem('pwaCal.events')) || {}; }
+        catch { return {}; }
+      }
+      function saveEvents() {
+        localStorage.setItem('pwaCal.events', JSON.stringify(events));
+      }
+
+      function renderCalendar() {
+        const y = viewDate.getFullYear();
+        const m = viewDate.getMonth();
+        titleEl.textContent = `${y}年 ${m + 1}月`;
+        const first = new Date(y, m, 1);
+        const last = new Date(y, m + 1, 0);
+        const startDay = first.getDay();
+
+        const days = ['日', '月', '火', '水', '木', '金', '土'];
+        let html = '<tr>' + days.map(d => `<th>${d}</th>`).join('') + '</tr><tr>';
+        for (let i = 0; i < startDay; i++) html += '<td></td>';
+
+        for (let d = 1; d <= last.getDate(); d++) {
+          const current = new Date(y, m, d);
+          const key = current.toISOString().split('T')[0];
+          html += `<td data-date="${key}" ondragover="event.preventDefault()">`;
+          html += `<div class="date-num">${d}</div>`;
+          const evts = events[key] || [];
+          for (const [i, ev] of evts.entries()) {
+            html += `<div class="event" draggable="true" data-idx="${i}" data-date="${key}">
+          ${ev.time ? ev.time + ' ' : ''}${ev.title}</div>`;
+          }
+          html += '</td>';
+          if ((startDay + d) % 7 === 0) html += '</tr><tr>';
+        }
+        html += '</tr>';
+        calEl.innerHTML = html;
+
+        // イベントクリック編集
+        calEl.querySelectorAll('.event').forEach(el => {
+          el.addEventListener('click', e => {
+            e.stopPropagation();
+            selectedDate = el.dataset.date;
+            editingIndex = +el.dataset.idx;
+            const data = events[selectedDate][editingIndex];
+            document.getElementById('modalDate').textContent = selectedDate;
+            document.getElementById('eventTitle').value = data.title;
+
+            // 時間のパース (HH:MM-HH:MM or HH:MM)
+            const timeStr = data.time || '';
+            const [startStr, endStr] = timeStr.split('-');
+
+            if (startStr) {
+              const [sh, sm] = startStr.split(':');
+              document.getElementById('eventStartHour').value = sh || '';
+              document.getElementById('eventStartMinute').value = sm || '';
+            } else {
+              document.getElementById('eventStartHour').value = '';
+              document.getElementById('eventStartMinute').value = '';
+            }
+
+            if (endStr) {
+              const [eh, em] = endStr.split(':');
+              document.getElementById('eventEndHour').value = eh || '';
+              document.getElementById('eventEndMinute').value = em || '';
+            } else {
+              document.getElementById('eventEndHour').value = '';
+              document.getElementById('eventEndMinute').value = '';
+            }
+
+            document.getElementById('modal').style.display = 'flex';
+          });
+
+          // Drag開始
+          el.addEventListener('dragstart', e => {
+            e.dataTransfer.setData('text/plain', JSON.stringify({
+              date: el.dataset.date,
+              idx: el.dataset.idx
+            }));
+          });
+        });
+
+        // ドロップ処理
+        calEl.querySelectorAll('td[data-date]').forEach(td => {
+          td.addEventListener('drop', e => {
+            e.preventDefault();
+            const info = JSON.parse(e.dataTransfer.getData('text/plain'));
+            const srcDate = info.date;
+            const idx = +info.idx;
+            const tgtDate = td.dataset.date;
+            if (!events[srcDate] || !events[srcDate][idx]) return;
+
+            // シフトキーが押されている場合はコピー、押されていない場合は移動
+            if (e.shiftKey) {
+              const item = { ...events[srcDate][idx] }; // コピー
+              if (!events[tgtDate]) events[tgtDate] = [];
+              events[tgtDate].push(item);
+            } else {
+              const item = events[srcDate].splice(idx, 1)[0]; // 移動（元から削除）
+              if (!events[tgtDate]) events[tgtDate] = [];
+              events[tgtDate].push(item);
+            }
+
+            saveEvents();
+            renderCalendar();
+          });
+
+          // 日付クリックで新規追加
+          td.addEventListener('click', () => {
+            selectedDate = td.dataset.date;
+            editingIndex = null;
+            document.getElementById('modalDate').textContent = selectedDate;
+            document.getElementById('eventTitle').value = '';
+            document.getElementById('eventStartHour').value = '';
+            document.getElementById('eventStartMinute').value = '';
+            document.getElementById('eventEndHour').value = '';
+            document.getElementById('eventEndMinute').value = '';
+            document.getElementById('modal').style.display = 'flex';
+          });
+        });
+      }
+
+      // 操作ボタン
+      document.getElementById('prevBtn').onclick = () => { viewDate.setMonth(viewDate.getMonth() - 1); renderCalendar(); };
+      document.getElementById('nextBtn').onclick = () => { viewDate.setMonth(viewDate.getMonth() + 1); renderCalendar(); };
+      document.getElementById('todayBtn').onclick = () => { viewDate = new Date(); renderCalendar(); };
+
+      // 今月の予定を来月にコピー
+      document.getElementById('copyMonthBtn').onclick = () => {
+        if (!confirm(`${viewDate.getFullYear()}年${viewDate.getMonth() + 1}月の予定をすべて翌月にコピーしますか？`)) return;
+
+        const currentYear = viewDate.getFullYear();
+        const currentMonth = viewDate.getMonth();
+
+        // 翌月の計算
+        const nextDate = new Date(currentYear, currentMonth + 1, 1);
+        const nextYear = nextDate.getFullYear();
+        const nextMonth = nextDate.getMonth();
+
+        let copyCount = 0;
+
+        // 既存のイベントを走査
+        Object.keys(events).forEach(dateKey => {
+          const dateParts = dateKey.split('-');
+          const y = parseInt(dateParts[0]);
+          const m = parseInt(dateParts[1]) - 1;
+          const d = parseInt(dateParts[2]);
+
+          // 表示中の月のイベントのみ対象
+          if (y === currentYear && m === currentMonth) {
+            // 翌月の同日が存在するか確認 (例: 1/31 -> 2/31は不正なのでスキップされる)
+            const targetDateTest = new Date(nextYear, nextMonth, d);
+            if (targetDateTest.getMonth() === nextMonth) {
+              const targetKey = targetDateTest.toISOString().split('T')[0];
+
+              if (!events[targetKey]) events[targetKey] = [];
+
+              events[dateKey].forEach(evt => {
+                events[targetKey].push({ ...evt }); // コピーを作成
+                copyCount++;
+              });
+            }
+          }
+        });
+
+        saveEvents();
+        alert(`${copyCount}件の予定を翌月にコピーしました。`);
+        renderCalendar();
+      };
+
+      document.getElementById('printBtn').onclick = () => window.print();
+
+      // モーダル操作
+      document.getElementById('saveEvent').onclick = () => {
+        const title = document.getElementById('eventTitle').value.trim();
+        // 時間の結合
+        const sh = document.getElementById('eventStartHour').value;
+        const sm = document.getElementById('eventStartMinute').value;
+        const eh = document.getElementById('eventEndHour').value;
+        const em = document.getElementById('eventEndMinute').value;
+
+        let time = '';
+        if (sh || sm) {
+          const startHH = (sh || '0').padStart(2, '0');
+          const startMM = (sm || '0').padStart(2, '0');
+          time = `${startHH}:${startMM}`;
+
+          if (eh || em) {
+            const endHH = (eh || '0').padStart(2, '0');
+            const endMM = (em || '0').padStart(2, '0');
+            time += `-${endHH}:${endMM}`;
+          }
+        }
+
+        if (!title) return alert('タイトルを入力してください');
+        if (!events[selectedDate]) events[selectedDate] = [];
+        if (editingIndex != null) {
+          events[selectedDate][editingIndex] = { title, time };
+        } else {
+          events[selectedDate].push({ title, time });
+        }
+        saveEvents();
+        document.getElementById('modal').style.display = 'none';
+        renderCalendar();
+      };
+      document.getElementById('deleteEvent').onclick = () => {
+        if (editingIndex == null) return;
+        if (confirm('この予定を削除しますか？')) {
+          events[selectedDate].splice(editingIndex, 1);
+          saveEvents();
+          document.getElementById('modal').style.display = 'none';
+          renderCalendar();
+        }
+      };
+      document.getElementById('copyNext').onclick = () => {
+        if (editingIndex == null) return;
+        const src = events[selectedDate][editingIndex];
+        const base = new Date(selectedDate);
+        const next = new Date(base.getFullYear(), base.getMonth() + 1, base.getDate());
+        const key = next.toISOString().split('T')[0];
+        if (!events[key]) events[key] = [];
+        events[key].push({ ...src });
+        saveEvents();
+        alert(`次の月（${key}）にコピーしました`);
+      };
+      document.getElementById('cancelModal').onclick = () => { document.getElementById('modal').style.display = 'none'; };
+
+      renderCalendar();
+    })();
+
+    // --- ✅ PWA Service Worker 登録 ---
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js')
+        .then(() => console.log('ServiceWorker登録成功'))
+        .catch(e => console.log('SW登録失敗', e));
+    }
+  </script>
+</body>
+
+</html>
